@@ -38,7 +38,7 @@ chown root:crash /opt/share/crash/info
 chmod 775 /opt/share/crash/info
 
 chown root:crash /opt/share/crash
-chmod 775 /opt/share/crash
+chmod 750 /opt/share/crash
 
 if [ -f %{_libdir}/rpm-plugins/msm.so ]; then
 	find /opt/share/crash -print0 | xargs -0 chsmack -a 'sys-assert::core'
