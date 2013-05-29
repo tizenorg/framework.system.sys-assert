@@ -7,6 +7,7 @@ License:    Apache License, Version 2.0
 Source0:    %{name}-%{version}.tar.gz
 
 BuildRequires:  pkgconfig(glib-2.0)
+BuildRequires:  pkgconfig(libunwind)
 BuildRequires:  cmake
 Requires(post): coreutils
 
@@ -17,7 +18,7 @@ libsys-assert (shared object).
 %setup -q
 
 %build
-export CFLAGS+=" -fPIC"
+export CFLAGS+=" -fPIC -lunwind"
 %ifarch %{arm}
     export CFLAGS+=" -DTARGET"
 %endif
