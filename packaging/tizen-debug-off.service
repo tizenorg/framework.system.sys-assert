@@ -1,0 +1,16 @@
+[Unit]
+Description=tizen debug off
+DefaultDependencies=no
+After=opt.mount
+Before=sysinit.target
+ConditionKernelCommandLine=sec_debug.enable=0
+ConditionKernelCommandLine=sec_debug.enable_user=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/rm -f /opt/etc/.debugmode
+ExecStart=/sbin/sysctl kernel.core_pattern=/dev/null
+
+[Install]
+WantedBy=sysinit.target
