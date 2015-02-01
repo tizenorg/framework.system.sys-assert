@@ -17,6 +17,8 @@
 
 #include "sys-assert.h"
 
+int open_read(const char *path, char *buf, int size);
+
 char *fgets_fd(char *str, int len, int fd);
 
 /* WARNING : formatted string buffer is limited to 1024 byte */

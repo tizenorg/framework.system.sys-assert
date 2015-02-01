@@ -1,7 +1,7 @@
 [Unit]
 Description=tizen debug off
 DefaultDependencies=no
-After=opt.mount
+After=opt.mount tizen-debug-on.service
 Before=sysinit.target
 ConditionKernelCommandLine=sec_debug.enable=0
 ConditionKernelCommandLine=sec_debug.enable_user=0

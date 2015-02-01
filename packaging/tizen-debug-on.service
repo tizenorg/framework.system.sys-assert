@@ -3,8 +3,6 @@ Description=tizen debug on
 DefaultDependencies=no
 After=opt.mount
 Before=sysinit.target
-ConditionKernelCommandLine=|!sec_debug.enable=0
-ConditionKernelCommandLine=|!sec_debug.enable_user=0
 
 [Service]
 Type=oneshot

@@ -32,6 +32,8 @@
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/sysinfo.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <time.h>
@@ -47,9 +49,9 @@
 #define STATUS_PATH "/proc/self/status"
 #define TASK_PATH "/proc/self/task"
 
-#define CRASH_INFO_PATH "/opt/share/crash/info"
-#define CRASH_REPORT_PATH "/opt/usr/share/crash/report"
-#define CRASH_NOTI_PATH "/opt/share/crash/curbs.log"
+#define CRASH_INFO_PATH "/tmp"
+#define CRASH_SOCKET "/tmp/crash_socket"
+#define CRASH_SOCKET_PATH_LEN 17
 
 #define CRASH_CALLSTACKINFO_TITLE "Callstack Information"
 #define CRASH_CALLSTACKINFO_TITLE_E "End of Call Stack"
@@ -80,7 +82,9 @@
 /* permission for open file */
 #define FILE_PERMS (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)
 
-int sig_to_handle[] = { SIGILL,	SIGABRT, SIGBUS, SIGFPE, SIGSEGV, };
+int sig_to_handle[] = {
+	SIGILL, SIGTRAP, SIGABRT, SIGBUS,
+	SIGFPE, SIGSEGV, SIGSTKFLT, SIGXCPU, SIGXFSZ, SIGSYS };
 
 #define NUM_SIG_TO_HANDLE	\
 	((int)(sizeof(sig_to_handle)/sizeof(sig_to_handle[0])))
@@ -98,6 +102,7 @@ static int trace_symbols(void *const *array, int size, struct addr_node *start, 
 	Elf32_Shdr *s_headers;
 	Elf32_Sym *symtab_entry;
 	int i, cnt, file, ret;
+	char *fname;
 	unsigned int addr, start_addr, offset_addr;
 	unsigned int strtab_index = 0;
 	unsigned int symtab_index = 0;
@@ -134,7 +139,10 @@ static int trace_symbols(void *const *array, int size, struct addr_node *start, 
 		if (info_funcs.dli_sname == NULL) {
 			file = open(info_funcs.dli_fname, O_RDONLY);
 			if (file < 0) {
-				file = open(strchr(info_funcs.dli_fname, '/'), O_RDONLY);
+				fname = strchr(info_funcs.dli_fname, '/');
+				if (!fname)
+					continue;
+				file = open(fname, O_RDONLY);
 				if (file < 0) {
 					fprintf_fd(fd,
 							"%2d: (%p) [%s] + %p\n",
@@ -410,12 +418,11 @@ static void print_signal_info(int signum, const siginfo_t *info, int fd)
 {
 	fprintf_fd(fd, "Signal: %d\n", signum);
 	switch (signum) {
-	case SIGINT:
-		fprintf_fd(fd, "      (SIGINT)\n");
-		break;
 	case SIGILL:
 		fprintf_fd(fd, "      (SIGILL)\n");
 		break;
+	case SIGTRAP:
+		fprintf_fd(fd, "      (SIGTRAP)\n");
 	case SIGABRT:
 		fprintf_fd(fd, "      (SIGABRT)\n");
 		break;
@@ -425,14 +432,23 @@ static void print_signal_info(int signum, const siginfo_t *info, int fd)
 	case SIGFPE:
 		fprintf_fd(fd, "      (SIGFPE)\n");
 		break;
-	case SIGKILL:
-		fprintf_fd(fd, "      (SIGKILL)\n");
-		break;
 	case SIGSEGV:
 		fprintf_fd(fd, "      (SIGSEGV)\n");
 		break;
-	case SIGPIPE:
-		fprintf_fd(fd, "      (SIGPIPE)\n");
+	case SIGTERM:
+		fprintf_fd(fd, "      (SIGTERM)\n");
+		break;
+	case SIGSTKFLT:
+		fprintf_fd(fd, "      (SIGSTKFLT)\n");
+		break;
+	case SIGXCPU:
+		fprintf_fd(fd, "      (SIGXCPU)\n");
+		break;
+	case SIGXFSZ:
+		fprintf_fd(fd, "      (SIGXFSZ)\n");
+		break;
+	case SIGSYS:
+		fprintf_fd(fd, "      (SIGSYS)\n");
 		break;
 	default:
 		fprintf_fd(fd, "\n");
@@ -571,6 +587,7 @@ void sighandler(int signum, siginfo_t *info, void *context)
 	char processname[NAME_MAX] = {0,};
 	char exepath[PATH_LEN] = {0,};
 	char filepath[PATH_LEN];
+	char crashid[TIME_MAX_LEN] = {0,};
 	/* for get time  */
 	time_t cur_time;
 	/* for get info */
@@ -585,6 +602,10 @@ void sighandler(int signum, siginfo_t *info, void *context)
 	/* for preventing recursion */
 	static int retry_count = 0;
 	struct sysinfo si;
+	/* for notification */
+	int sent, sockfd = -1;
+	struct timeval tv_timeo = { 3, 500000 };
+	struct sockaddr_un clientaddr;
 
 	if (retry_count > 1) {
 		fprintf(stderr, "[sys-assert] recurcive called\n");
@@ -608,19 +629,11 @@ void sighandler(int signum, siginfo_t *info, void *context)
 	cnt_callstack = dump_callstack(callstack_addrs, CALLSTACK_SIZE, context, retry_count);
 	retry_count += 1;
 	/* get exepath */
-	if ((fd = open(CMDLINE_PATH, O_RDONLY)) < 0) {
-		fprintf(stderr, "[sys-assert]can't open %s\n", CMDLINE_PATH);
-		return;
-	} else {
-		readnum = read(fd, exepath, sizeof(exepath) - 1);
-		close(fd);
-		if (readnum <= 0) {
-			fprintf(stderr, "[sys-assert]can't get cmdline\n");
-			return;
-		} else {
-			exepath[readnum] = '\0';
-		}
+	if ((readnum = open_read(CMDLINE_PATH, exepath, sizeof(exepath) - 1)) <= 0) {
+		fprintf(stderr, "[sys-assert]can't read %s\n", CMDLINE_PATH);
+		readnum = snprintf(exepath, sizeof(exepath), "unknown_process");
 	}
+	exepath[readnum] = '\0';
 	/* get processname */
 	if ((p_exepath = remove_path(exepath)) == NULL)
 		return;
@@ -630,12 +643,14 @@ void sighandler(int signum, siginfo_t *info, void *context)
 			!strcmp(processname, "crash-popup"))
 		return;
 	/* make crash info file name */
-	snprintf(timestr, sizeof(timestr), "%lu", cur_time);
+	snprintf(timestr, sizeof(timestr), "%.10ld", cur_time);
+	snprintf(crashid, sizeof(crashid), "%.2d%.5d%02x%02x%02x%s",
+				signum, pid, processname[0], processname[1], processname[2], timestr);
 	if (snprintf(filepath, PATH_LEN,
-				"%s/%d_%s.info", CRASH_INFO_PATH, pid, timestr) == 0) {
+				"%s/%s.info", CRASH_INFO_PATH, crashid) == 0) {
 		fprintf(stderr,
-				"[sys-assert]can't make crash info file name : %d%s\n",
-				pid, timestr);
+				"[sys-assert]can't make crash info file name : %s\n",
+				crashid);
 		return;
 	}
 	/* check crash info dump directory, make directory if absent */
@@ -787,14 +802,36 @@ void sighandler(int signum, siginfo_t *info, void *context)
 	prctl(PR_SET_DUMPABLE, 0);
 #endif
 	/* NOTIFY CRASH */
-	if ((fd = open(CRASH_NOTI_PATH, O_RDWR | O_APPEND)) < 0)
-		fprintf(stderr, "[sys-assert]cannot make %s !\n", CRASH_NOTI_PATH);
-	else {
-		fprintf_fd(fd, "S|%s|%s|%d|%s|%d\n",
-				processname, timestr, pid, exepath,
-				strlen(processname) + strlen(exepath));
-		close(fd);
+	if ((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+		fprintf(stderr, "[sys-assert] failed socket()");
+		goto exit;
 	}
+	if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO,
+				&tv_timeo, sizeof(tv_timeo) ) < 0) {
+		fprintf(stderr, "[sys-assert] setsockopt SO_SNDTIMEO");
+		close(sockfd);
+		goto exit;
+	}
+	bzero(&clientaddr, sizeof(clientaddr));
+	clientaddr.sun_family = AF_UNIX;
+	memset(clientaddr.sun_path, 0x00, sizeof(clientaddr.sun_path));
+	strncpy(clientaddr.sun_path, CRASH_SOCKET, CRASH_SOCKET_PATH_LEN);
+	clientaddr.sun_path[CRASH_SOCKET_PATH_LEN] = '\0';
+
+	if (connect(sockfd, (struct sockaddr *)&clientaddr, sizeof(clientaddr)) < 0) {
+		close(sockfd);
+		fprintf(stderr, "[sys-assert] failed connect()");
+		goto exit;
+	}
+	snprintf(linebuf, sizeof(linebuf),
+			"%d|%d|%s|%s|%s|%s", signum, pid, timestr,
+			processname, exepath, crashid);
+
+	sent = write(sockfd, linebuf, strlen(linebuf));
+	if (sent < 0)
+		fprintf(stderr, "[sys-assert] failed write()");
+	close(sockfd);
+exit:
 	for (idx = 0; idx < NUM_SIG_TO_HANDLE; idx++) {
 		if (sig_to_handle[idx] == signum) {
 			sigaction(signum, &g_oldact[idx], NULL);

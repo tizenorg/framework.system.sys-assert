@@ -19,7 +19,32 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include "util.h"
+
+int open_read(const char *path, char *buf, int size)
+{
+	int fd;
+	int ret;
+
+	if (buf == NULL || path == NULL)
+	    return -1;
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+	    return -1;
+
+	ret = read(fd, buf, size - 1);
+	if (ret <= 0) {
+	    close(fd);
+	    return -1;
+	} else
+	    buf[ret] = '\0';
+
+	close(fd);
+
+	return ret;
+}
 
 char *fgets_fd(char *str, int len, int fd)
 {
@@ -58,7 +83,7 @@ char *remove_path(const char *cmd)
 	char *np;
 
 	cp = np = (char *)cmd;
-	while (*cp) {
+	while (*cp && *cp != ' ') {
 		if (*cp == '/')
 			np = cp + 1;
 		cp++;
