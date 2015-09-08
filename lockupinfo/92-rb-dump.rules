@@ -1,3 +1,0 @@
-
-#RB_DUMP
-ACTION=="change" DEVPATH=="/devices/platform/samsung_input_bridge", ENV{RB_DUMP}=="ON" RUN+="/usr/bin/lockupinfo.sh"

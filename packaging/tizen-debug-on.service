@@ -1,0 +1,14 @@
+[Unit]
+Description=tizen debug on
+DefaultDependencies=no
+After=opt.mount
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/touch -f /opt/etc/.debugmode
+ExecStart=/sbin/sysctl kernel.core_pattern=/opt/usr/share/crash/core/%%p_%%s_%%e.core
+
+[Install]
+WantedBy=sysinit.target

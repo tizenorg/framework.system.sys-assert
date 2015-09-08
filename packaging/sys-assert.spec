@@ -1,27 +1,39 @@
-#sbs-git:slp/pkgs/s/sys-assert sys-assert 0.3.0 8c6fe2f2b76743849583c95c96073692877ab541
 Name:       sys-assert
 Summary:    libsys-assert (shared object).
-Version:    0.3.1
-Release:    0
-Group:      TBD
-License:    LGPL
+Version:    0.3.2
+Release:    10
+Group:      Framework/system
+License:    Apache-2.0
 Source0:    %{name}-%{version}.tar.gz
+Source1:	%{name}.manifest
+Source101:	packaging/tizen-debug-on.service
+Source102:	packaging/tizen-debug-off.service
 
-BuildRequires:  pkgconfig(glib-2.0)
-BuildRequires:  pkgconfig(dlog)
-BuildRequires:  cmake
-BuildRequires:  edje-tools
+BuildRequires:	pkgconfig(glib-2.0)
+BuildRequires:	pkgconfig(libunwind)
+BuildRequires:	cmake
+Requires:	libunwind
+Requires(post): coreutils
+Requires(post): smack-utils
 
 %description
 libsys-assert (shared object).
 
 %prep
 %setup -q
+cp %{SOURCE1} .
 
 %build
-export CFLAGS+=" -fPIC"
+%if 0%{?sec_build_binary_crash_enable}
+export CFLAGS+=" -DTIZEN_ENABLE_COREDUMP"
+%endif
+export CFLAGS+=" -fPIC -Werror"
 %ifarch %{arm}
-    export CFLAGS+=" -DTARGET"
+	export CFLAGS+=" -DARM"
+%else
+	%ifarch %{ix86}
+    	export CFLAGS+=" -DX86"
+	%endif
 %endif
 
 cmake . -DCMAKE_INSTALL_PREFIX=/usr
@@ -30,29 +42,28 @@ make %{?jobs:-j%jobs}
 
 %install
 rm -rf %{buildroot}
-
 %make_install
+mkdir -p %{buildroot}/usr/share/license
+cp LICENSE %{buildroot}/usr/share/license/%{name}
+mkdir -p %{buildroot}%{_libdir}/systemd/system/sysinit.target.wants
+install -m 0644 %{SOURCE101} %{buildroot}%{_libdir}/systemd/system/tizen-debug-on.service
+install -m 0644 %{SOURCE102} %{buildroot}%{_libdir}/systemd/system/tizen-debug-off.service
+ln -s ../tizen-debug-on.service %{buildroot}%{_libdir}/systemd/system/sysinit.target.wants/tizen-debug-on.service
+ln -s ../tizen-debug-off.service %{buildroot}%{_libdir}/systemd/system/sysinit.target.wants/tizen-debug-off.service
 
 %post
 /sbin/ldconfig
-mkdir -p /opt/bs/core
-chown 0:5000 /opt/bs/core
-chmod 775 /opt/bs/core
-mkdir -p /opt/share/hidden_storage/SLP_debug
-chown 0:5000 /opt/share/hidden_storage
-chmod 775 /opt/share/hidden_storage
-chown 0:5000 /opt/share/hidden_storage/SLP_debug
-chmod 775 /opt/share/hidden_storage/SLP_debug
-chmod +x /etc/opt/init/sys-assert.init.sh
-/etc/opt/init/sys-assert.init.sh
+if [ ! -d /.build ]; then
+	echo "/usr/lib/libsys-assert.so" >> /etc/ld.so.preload
+	chmod 644 /etc/ld.so.preload
+fi
 
 %files
-/usr/bin/*
-/usr/lib/*.so*
-/etc/udev/rules.d/92-rb-dump.rules
-/etc/opt/init/sys-assert.init.sh
-/usr/opt/etc/.debugmode
-/usr/bin/lockupinfo
-/usr/bin/lockupinfo.sh
-/usr/lib/libsys-assert.so
-
+%manifest %{name}.manifest
+/opt/etc/.debugmode
+%{_libdir}/libsys-assert.so
+/usr/share/license/%{name}
+%{_libdir}/systemd/system/tizen-debug-on.service
+%{_libdir}/systemd/system/tizen-debug-off.service
+%{_libdir}/systemd/system/sysinit.target.wants/tizen-debug-on.service
+%{_libdir}/systemd/system/sysinit.target.wants/tizen-debug-off.service
