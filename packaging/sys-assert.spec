@@ -44,7 +44,7 @@ make %{?jobs:-j%jobs}
 rm -rf %{buildroot}
 %make_install
 mkdir -p %{buildroot}/usr/share/license
-cp LICENSE %{buildroot}/usr/share/license/%{name}
+cp LICENSE.APLv2 %{buildroot}/usr/share/license/%{name}
 mkdir -p %{buildroot}%{_libdir}/systemd/system/sysinit.target.wants
 install -m 0644 %{SOURCE101} %{buildroot}%{_libdir}/systemd/system/tizen-debug-on.service
 install -m 0644 %{SOURCE102} %{buildroot}%{_libdir}/systemd/system/tizen-debug-off.service

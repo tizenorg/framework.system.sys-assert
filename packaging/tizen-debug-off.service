@@ -11,6 +11,7 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/bin/rm -f /opt/etc/.debugmode
 ExecStart=/sbin/sysctl kernel.core_pattern=/dev/null
+SmackProcessLabel=sys-assert
 
 [Install]
 WantedBy=sysinit.target

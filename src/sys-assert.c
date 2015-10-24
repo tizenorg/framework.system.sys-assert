@@ -49,7 +49,7 @@
 #define STATUS_PATH "/proc/self/status"
 #define TASK_PATH "/proc/self/task"
 
-#define CRASH_INFO_PATH "/tmp"
+#define CRASH_INFO_PATH "/tmp/crash_info"
 #define CRASH_SOCKET "/tmp/crash_socket"
 #define CRASH_SOCKET_PATH_LEN 17
 
@@ -125,20 +125,26 @@ static int trace_symbols(void *const *array, int size, struct addr_node *start, 
 		/* because of launchpad,
 		 * return value of dladdr when find executable is wrong.
 		 * so fix dli_fname here */
-		if (info_funcs.dli_fbase == (void *)BASE_LAUNCHPAD_ADDR &&
-				info_funcs.dli_fname &&
-				(strncmp("/opt/apps/",
-						 info_funcs.dli_fname,
-						 strlen("/opt/apps/")) == 0)) {
+		if (info_funcs.dli_fbase &&
+			info_funcs.dli_fname &&
+			info_funcs.dli_fbase == (void *)BASE_LAUNCHPAD_ADDR &&
+			(strncmp("/opt/apps/", info_funcs.dli_fname,
+					 strlen("/opt/apps/")) == 0)) {
 			info_funcs.dli_fname = get_fpath(array[cnt], start);
 			offset_addr = addr;
 		} else {
 			offset_addr = addr - start_addr;
 		}
+
 		/* find symbol from elf file */
 		if (info_funcs.dli_sname == NULL) {
-			if (info_funcs.dli_fname == NULL)
+
+			/* Both dli_sname and dli_fname is NULL, sys-assert cannot trace any information.
+			   Thus, sys-assert skips to translate such address entry.
+			   However, if a developer wants raw information, we need to fix the code to print raw data */
+			if(info_funcs.dli_fname == NULL)
 				continue;
+
 			file = open(info_funcs.dli_fname, O_RDONLY);
 			if (file < 0) {
 				fname = strchr(info_funcs.dli_fname, '/');
@@ -658,12 +664,9 @@ void sighandler(int signum, siginfo_t *info, void *context)
 	}
 	/* check crash info dump directory, make directory if absent */
 	if (access(CRASH_INFO_PATH, F_OK) == -1) {
-		if (mkdir(CRASH_INFO_PATH, DIR_PERMS) < 0) {
-			fprintf(stderr,
-					"[sys-assert]can't make dir : %s errno : %s\n",
-					CRASH_INFO_PATH, strerror(errno));
-			return;
-		}
+		fprintf(stderr, "[sys-assert] No directory (%s)", CRASH_INFO_PATH);
+		/*TODO: making directory */
+		return;
 	}
 	/* logging crash information to stderr */
 	fprintf(stderr, "crashed [%s] processname=%s, pid=%d, tid=%d, signal=%d",
